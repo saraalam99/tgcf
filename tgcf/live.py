@@ -6,8 +6,10 @@ import sys
 from typing import Union
 
 from telethon import TelegramClient, events, functions, types
+from telethon.errors import ChatForwardsRestrictedError
 from telethon.sessions import StringSession
 from telethon.tl.custom.message import Message
+from telethon.tl.types import InputMediaPhoto, InputMediaDocument
 
 from tgcf import config, const
 from tgcf import storage as st
@@ -50,10 +52,21 @@ async def new_message_handler(event: Union[Message, events.NewMessage]) -> None:
     for d in dest:
         if event.is_reply and r_event_uid in st.stored:
             tm.reply_to = st.stored.get(r_event_uid).get(d)
-        # Fetch the message content
+        # Fetch the message content and send it as a new message
         new_message_content = message.text or message.message
         tm.text = new_message_content
-        fwded_msg = await send_message(d, tm)
+        try:
+            fwded_msg = await send_message(d, tm)
+        except ChatForwardsRestrictedError:
+            # Handle the restriction by sending the message as a new message without downloading
+            if message.media:
+                if isinstance(message.media, types.MessageMediaPhoto):
+                    input_media = InputMediaPhoto(id=message.media.photo)
+                else:
+                    input_media = InputMediaDocument(id=message.media.document)
+                fwded_msg = await message.client.send_file(d, input_media, caption=new_message_content)
+            else:
+                fwded_msg = await message.client.send_message(d, new_message_content)
         st.stored[event_uid].update({d: fwded_msg})
     tm.clear()
 
@@ -87,7 +100,18 @@ async def edited_message_handler(event) -> None:
                 # Fetch the message content
                 new_message_content = message.text or message.message
                 tm.text = new_message_content
-                await msg.edit(tm.text)
+                try:
+                    await msg.edit(tm.text)
+                except ChatForwardsRestrictedError:
+                    # Handle the restriction by sending the message as a new message without downloading
+                    if message.media:
+                        if isinstance(message.media, types.MessageMediaPhoto):
+                            input_media = InputMediaPhoto(id=message.media.photo)
+                        else:
+                            input_media = InputMediaDocument(id=message.media.document)
+                        await msg.client.send_file(msg.to_id, input_media, caption=new_message_content)
+                    else:
+                        await msg.client.send_message(msg.to_id, new_message_content)
         return
 
     dest = config.from_to.get(chat_id)
