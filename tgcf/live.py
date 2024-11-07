@@ -50,6 +50,9 @@ async def new_message_handler(event: Union[Message, events.NewMessage]) -> None:
     for d in dest:
         if event.is_reply and r_event_uid in st.stored:
             tm.reply_to = st.stored.get(r_event_uid).get(d)
+        # Fetch the message content
+        new_message_content = message.text or message.message
+        tm.text = new_message_content
         fwded_msg = await send_message(d, tm)
         st.stored[event_uid].update({d: fwded_msg})
     tm.clear()
@@ -81,12 +84,18 @@ async def edited_message_handler(event) -> None:
                 await msg.delete()
                 await message.delete()
             else:
+                # Fetch the message content
+                new_message_content = message.text or message.message
+                tm.text = new_message_content
                 await msg.edit(tm.text)
         return
 
     dest = config.from_to.get(chat_id)
 
     for d in dest:
+        # Fetch the message content
+        new_message_content = message.text or message.message
+        tm.text = new_message_content
         await send_message(d, tm)
     tm.clear()
 
